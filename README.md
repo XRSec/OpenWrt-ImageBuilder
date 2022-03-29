@@ -1,7 +1,7 @@
 # OpenWrt imagebuilder with [@kiddin9](https://github.com/kiddin9/)
 
-[1]: https://github.com/XRSec/OpenWrt-X86/actions/workflows/build-openwrt.yml/badge.svg
-[2]: https://github.com/XRSec/OpenWrt-X86/actions/workflows/build-openwrt.yml
+[1]: https://github.com/XRSec/OpenWrt-ImageBuilder/actions/workflows/build-openwrt.yml/badge.svg
+[2]: https://github.com/XRSec/OpenWrt-ImageBuilder/actions/workflows/build-openwrt.yml
 [3]: https://img.shields.io/badge/By-kiddin9-brightgreen.svg
 [4]: https://github.com/kiddin9/OpenWrt_x86-r2s-r4s
 
