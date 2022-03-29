@@ -1,0 +1,229 @@
+
+#
+# by xrsec < https://github.com/XRSec >
+#
+
+name: 编译 OpenWrt
+
+on:
+  push: # 早猜到你小子可能用 push; 搞死我了
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      PROFILE:
+        description: '请输入 PROFILE 信息'
+        required: true
+        default: 'false'
+      PACKAGES:
+        description: '请输入 PACKAGES 信息'
+        required: true
+        default: 'false'
+      CONFIG_TARGET_KERNEL_PARTSIZE:
+        description: '请输入 引导区 内存大小'
+        required: true
+        default: 'false'
+      CONFIG_TARGET_ROOTFS_PARTSIZE:
+        description: '请输入 系统盘 内存大小'
+        required: true
+        default: 'false'
+      CONFIG_TARGET_PREINIT_IP:
+        description: '请输入 IP 信息'
+        required: true
+        default: 'false'
+      tagName:
+        description: '请设置 RELEASE 版本号'
+        required: true
+        default: 'false'
+
+env:
+  ROOT_PATH: /WORK_DIR
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_COWTRANSFER: false
+  UPLOAD_WETRANSFER: false
+  UPLOAD_RELEASE: true
+  BIN_DIR: "/WORK_DIR/bin"
+  TZ: Asia/Shanghai
+
+jobs:
+  Build:
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        # target: [x86_64,n1]
+        target: [x86_64]
+    steps:
+    -
+      name: 取消之前运行的工作流程
+      uses: styfle/cancel-workflow-action@0.9.1
+      with:
+        access_token: ${{ secrets.TOKEN_GITHUB }}
+    -
+      name: 拉取仓库代码
+      uses: actions/checkout@main
+    -
+      name: 初始化环境变量
+      run: |
+        sudo mkdir -p "${ROOT_PATH}/${{matrix.target}}"
+        sudo chown $USER:$GROUPS "${ROOT_PATH}"
+        # 读取环境变量
+        source "${GITHUB_WORKSPACE}/devices/x86_64/settings.ini"
+
+        # PROFILE
+        if [[ "${{ github.event.inputs.PROFILE }}" != "" ]] && [[ "${{ github.event.inputs.PROFILE }}" != "false" ]]; then
+         PROFILE="${{ github.event.inputs.PROFILE }}"
+        fi
+
+        # PACKAGES
+        if [[ "${{ github.event.inputs.PACKAGES }}" != "" ]] && [[ "${{ github.event.inputs.PACKAGES }}" != "false" ]]; then
+         PACKAGES="${{ github.event.inputs.PACKAGES }}"
+        fi
+
+        # CONFIG_TARGET_KERNEL_PARTSIZE
+        if [[ "${{ github.event.inputs.CONFIG_TARGET_KERNEL_PARTSIZE }}" != "" ]] && [[ "${{ github.event.inputs.CONFIG_TARGET_KERNEL_PARTSIZE }}" != "false" ]]; then
+         CONFIG_TARGET_KERNEL_PARTSIZE="${{ github.event.inputs.CONFIG_TARGET_KERNEL_PARTSIZE }}"
+        fi
+
+        # CONFIG_TARGET_ROOTFS_PARTSIZE
+        if [[ "${{ github.event.inputs.CONFIG_TARGET_ROOTFS_PARTSIZE }}" != "" ]] && [[ "${{ github.event.inputs.CONFIG_TARGET_ROOTFS_PARTSIZE }}" != "false" ]]; then
+         CONFIG_TARGET_ROOTFS_PARTSIZE="${{ github.event.inputs.CONFIG_TARGET_ROOTFS_PARTSIZE }}"
+        fi
+
+        # CONFIG_TARGET_PREINIT_IP
+        if [[ "${{ github.event.inputs.CONFIG_TARGET_PREINIT_IP }}" != "" ]] && [[ "${{ github.event.inputs.CONFIG_TARGET_PREINIT_IP }}" != "false" ]]; then
+         CONFIG_TARGET_PREINIT_IP="${{ github.event.inputs.CONFIG_TARGET_PREINIT_IP }}"
+        fi
+
+        echo "BUILDER_URL=${BUILDER_URL}" >> $GITHUB_ENV
+        echo "BUILDINFO=${BUILDINFO}" >> $GITHUB_ENV
+        echo "PROFILE=${PROFILE}" >> $GITHUB_ENV
+        echo "PACKAGES=${PACKAGES}" >> $GITHUB_ENV
+        echo "FILES=${GITHUB_WORKSPACE}/${FILES}" >> $GITHUB_ENV
+        set | grep -E "^CONFIG" | grep -vE "bash|zsh" | xargs -n1 -I {} echo  {} >> $GITHUB_ENV
+    -
+      name: 打印环境变量
+      if: (!cancelled())
+      run: |
+        echo "BUILDER_URL=${BUILDER_URL}"
+        echo "PROFILE=${PROFILE}"
+        echo "PACKAGES=${PACKAGES}"
+        echo "FILES=${FILES}"
+        echo "BIN_DIR=${BIN_DIR}"
+        set | grep -E "^CONFIG" | grep -vE "bash|zsh" | xargs -n1 -I {} echo  {}
+    -
+      name: 检查 BUILDER 更新
+      id: update
+      run: |
+        if [[ "$(curl -s ${BUILDINFO} || exit)" == "$(cat ${GITHUB_WORKSPACE}/BUILDER/version.buildinfo || exit)" ]]; then
+          echo "固件没有更新"
+        else
+          echo "::set-output name=status::success"
+        fi
+    -
+      name: 更新 BUILDER 镜像
+      if: steps.update.outputs.status == 'success'
+      run: |
+        set -ex
+        rm -rf "${GITHUB_WORKSPACE}/BUILDER/*" || exit
+        wget -O "${ROOT_PATH}/openwrt-imagebuilder.tar.xz" "${BUILDER_URL}" || exit
+        split -b 50m "${ROOT_PATH}/openwrt-imagebuilder.tar.xz" "${GITHUB_WORKSPACE}/BUILDER/x" || exit
+        rm -rf "${ROOT_PATH}/openwrt-imagebuilder.tar.xz" || exit
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add .
+        git commit -m "Add changes by BUILDER_Update_Action"
+        git push
+    -
+      name: 安装软件包
+      if: cancelled()
+      run: |
+        # export ROOT_PATH="$(pwd)"
+        sudo timedatectl set-timezone "$TZ"
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install build-essential libncurses5-dev libncursesw5-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+    -
+      name: 开始编译
+      if: ${{matrix.target}} != n1 && !cancelled()
+      id: compile
+      run: |
+        # DEBUG MODEL
+        set -ex
+        cat "${GITHUB_WORKSPACE}"/BUILDER/x* > "${ROOT_PATH}/openwrt-imagebuilder.tar.xz" || exit
+        tar -J -x -f "${ROOT_PATH}/openwrt-imagebuilder.tar.xz" -C "${ROOT_PATH}" || exit
+        mv "${ROOT_PATH}"/openwrt-imagebuilder-* "${ROOT_PATH}/openwrt-imagebuilder" || exit
+        cd "${ROOT_PATH}/openwrt-imagebuilder" || exit
+
+        # 开始编译
+        make image PROFILE="${PROFILE}" PACKAGES="${PACKAGES}" FILES="${FILES}/" "$(set | grep -E "^CONFIG" | grep -vE "bash|zsh" | tr -s "\r\n" " ")"
+        echo "::set-output name=status::success"
+    -
+      name: 检查空间使用情况
+      if: (!cancelled())
+      run: df -hT
+    -
+      name: 上传bin目录
+      uses: actions/upload-artifact@main
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      with:
+        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: ${ROOT_PATH}/openwrt-imagebuilder/bin/${{matrix.target}}/generic
+    -
+      name: 整理文件
+      id: organize
+      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      run: |
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
+        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+        echo "::set-output name=status::success"
+    -
+      name: 固件上传目录
+      uses: actions/upload-artifact@main
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
+    -
+      name: 上传固件到 cowtransfer
+      id: cowtransfer
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
+      run: |
+        curl -fsSL git.io/file-transfer | sh
+        ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
+        echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
+        echo "::set-output name=url::$(cat cowtransfer.log | grep https | cut -f3 -d" ")"
+    -
+      name: 上传固件到 WeTransfer
+      id: wetransfer
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled()
+      run: |
+        curl -fsSL git.io/file-transfer | sh
+        ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
+        echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
+        echo "::set-output name=url::$(cat wetransfer.log | grep https | cut -f3 -d" ")"
+    -
+      name: 生成tag标记
+      id: tag
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      run: |
+        if [ !${{ github.event.inputs.tagName }} ];then
+          echo "::set-output name=release_tag::$(date +"%Y.%m.%d-%H%M")"
+        else
+          echo "::set-output name=release_tag::${tagName}"
+        touch release.txt
+        [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
+        [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
+        echo "::set-output name=status::success"
+    -
+      name: 上传固件到releases页面
+      uses: softprops/action-gh-release@v1
+      if: steps.tag.outputs.status == 'success' && !cancelled()
+      env:
+        GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body_path: release.txt
+        files: ${{ env.FIRMWARE }}/*
