@@ -27,3 +27,5 @@
 3. 完全自定义 `devices/x86_64/settings.ini` `files/root/.zshrc`
 
 4. 如果不填写参数,将会以配置文件`(devices/{{target}}/settings.ini)`内的值为参考
+
+5. 当然你有当前固件的 `.config` 文件也可以直接替换,就不需要什么参数了
