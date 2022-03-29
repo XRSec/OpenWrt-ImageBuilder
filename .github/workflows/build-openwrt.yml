@@ -1,4 +1,3 @@
-
 #
 # by xrsec < https://github.com/XRSec >
 #
@@ -6,7 +5,7 @@
 name: 编译 OpenWrt
 
 on:
-  push: # 早猜到你小子可能用 push; 搞死我了
+  # push: # 早猜到你小子可能用 push; 搞死我了
   repository_dispatch:
   workflow_dispatch:
     inputs:
