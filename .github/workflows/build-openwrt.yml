@@ -116,7 +116,7 @@ jobs:
         if [[ "$(curl -s ${BUILDINFO} || exit)" == "$(cat ${GITHUB_WORKSPACE}/BUILDER/version.buildinfo || exit)" ]]; then
           echo "固件没有更新"
         else
-          echo "::set-output name=status::success"
+          echo "status=success" >> $GITHUB_OUTPUT
         fi
     -
       name: 更新 BUILDER 镜像
@@ -157,7 +157,7 @@ jobs:
 
         # 开始编译
         make image PROFILE="${PROFILE}" PACKAGES="${PACKAGES}" FILES="${FILES}/" "$(set | grep -E "^CONFIG" | grep -vE "bash|zsh" | tr -s "\r\n" " ")"
-        echo "::set-output name=status::success"
+        echo "status=success" >> $GITHUB_OUTPUT
     -
       name: 检查空间使用情况
       if: (!cancelled())
@@ -177,7 +177,7 @@ jobs:
         cd openwrt/bin/targets/*/*
         rm -rf packages
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "::set-output name=status::success"
+        echo "status=success" >> $GITHUB_OUTPUT
     -
       name: 固件上传目录
       uses: actions/upload-artifact@main
@@ -193,7 +193,7 @@ jobs:
         curl -fsSL git.io/file-transfer | sh
         ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
         echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
-        echo "::set-output name=url::$(cat cowtransfer.log | grep https | cut -f3 -d" ")"
+        echo "url=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
     -
       name: 上传固件到 WeTransfer
       id: wetransfer
@@ -201,21 +201,21 @@ jobs:
       run: |
         curl -fsSL git.io/file-transfer | sh
         ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
-        echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
-        echo "::set-output name=url::$(cat wetransfer.log | grep https | cut -f3 -d" ")"
+        echo "=warning file=wetransfer.com=$(cat wetransfer.log | grep https)"
+        echo "url=$(cat wetransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
     -
       name: 生成tag标记
       id: tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
         if [ !${{ github.event.inputs.tagName }} ];then
-          echo "::set-output name=release_tag::$(date +"%Y.%m.%d-%H%M")"
+          echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         else
-          echo "::set-output name=release_tag::${tagName}"
+          echo "release_tag=${tagName}"
         touch release.txt
         [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
         [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
-        echo "::set-output name=status::success"
+        echo "status=success" >> $GITHUB_OUTPUT
     -
       name: 上传固件到releases页面
       uses: softprops/action-gh-release@v1
